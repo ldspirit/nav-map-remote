@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { query } from './db.js';
-import { formatAddress, chooseStreetType, generateStreetName, nextHouseNumber, formatByCountry } from '@nav-map/core';
+import { formatAddress, chooseStreetType, nextHouseNumber, formatByCountry, pickStreetName } from '@nav-map/core';
 
 export function registerRoutes(app) {
   app.post('/api/v1/auth/register', async (req, res) => {
@@ -135,7 +135,7 @@ export function registerRoutes(app) {
 
     // 2) New street + sequential numbering
     const streetType = chooseStreetType({});
-    const streetName = generateStreetName('Hope');
+    const streetName = pickStreetName('NG');
 
     const street = await query(
       `INSERT INTO streets (name, street_type, country_id) VALUES ($1,$2,'NG') RETURNING id`,
