@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { query } from './db.js';
-import { formatAddress, chooseStreetType, generateStreetName, nextHouseNumber } from '@nav-map/core';
+import { formatAddress, chooseStreetType, generateStreetName, nextHouseNumber, formatByCountry } from '@nav-map/core';
 
 export function registerRoutes(app) {
   app.post('/api/v1/auth/register', async (req, res) => {
@@ -121,10 +121,14 @@ export function registerRoutes(app) {
 
       return res.status(201).json({
         address_id: created.rows[0].id,
-        full_address: formatAddress({
-          houseNumber: existing.house_number,
-          streetName: 'Hope Street',
-          pNumber
+        full_address: formatByCountry({
+          countryCode: 'NG',
+          number: existing.house_number,
+          street: `Hope Street P${pNumber}`,
+          unit: unit_designation || '',
+          postal: '100001',
+          city: 'Lagos',
+          state: 'Lagos State'
         })
       });
     }
@@ -154,7 +158,15 @@ export function registerRoutes(app) {
 
     res.status(201).json({
       address_id: address.rows[0].id,
-      full_address: formatAddress({ houseNumber, streetName: `${streetName} ${streetType}`, pNumber: 1, country: 'Nigeria' })
+      full_address: formatByCountry({
+        countryCode: 'NG',
+        number: houseNumber,
+        street: `${streetName} ${streetType} P1`,
+        unit: unit_designation || '',
+        postal: '100001',
+        city: 'Lagos',
+        state: 'Lagos State'
+      })
     });
   });
 
