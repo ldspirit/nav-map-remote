@@ -1,4 +1,16 @@
 {
+  "name": "nav-map-remote",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm --workspace apps/api run dev",
+    "dev:web": "npm --workspace apps/web run dev",
+    "build": "npm --workspace apps/web run build",
+    "lint": "npm --workspace apps/api run lint && npm --workspace apps/web run lint"
+  },
   "devDependencies": {
     "pg": "^8.18.0",
     "playwright": "^1.58.2"

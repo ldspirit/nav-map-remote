@@ -1,0 +1,6 @@
+{
+  "name": "@nav-map/core",
+  "private": true,
+  "type": "module",
+  "main": "index.js"
+}
