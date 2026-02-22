@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { query } from './db.js';
-import { formatAddress, chooseStreetType, generateStreetName } from '@nav-map/core';
+import { formatAddress, chooseStreetType, generateStreetName, nextHouseNumber } from '@nav-map/core';
 
 export function registerRoutes(app) {
   app.post('/api/v1/auth/register', async (req, res) => {
@@ -88,7 +88,48 @@ export function registerRoutes(app) {
 
     const { user_id, coordinates, unit_designation } = parsed.data;
 
-    // Placeholder: basic street naming + formatting (to be upgraded with GPS matching & numbering)
+    // 1) GPS match to existing address (P-system)
+    const nearby = await query(
+      `SELECT id, street_id, house_number, p_number
+       FROM addresses
+       WHERE country_id = 'NG'
+         AND ST_DWithin(
+           coordinates::geography,
+           ST_SetSRID(ST_MakePoint($1,$2),4326)::geography,
+           12
+         )
+       ORDER BY created_at ASC
+       LIMIT 1`,
+      [coordinates.lng, coordinates.lat]
+    );
+
+    if (nearby.rows.length > 0) {
+      const existing = nearby.rows[0];
+      const nextP = await query(
+        `SELECT COALESCE(MAX(p_number),0) + 1 AS next_p
+         FROM addresses WHERE street_id=$1 AND house_number=$2`,
+        [existing.street_id, existing.house_number]
+      );
+      const pNumber = nextP.rows[0].next_p;
+
+      const created = await query(
+        `INSERT INTO addresses (street_id, house_number, p_number, unit_designation, coordinates, country_id, user_id)
+         VALUES ($1,$2,$3,$4,ST_SetSRID(ST_MakePoint($5,$6),4326)::geography,'NG',$7)
+         RETURNING id`,
+        [existing.street_id, existing.house_number, pNumber, unit_designation || null, coordinates.lng, coordinates.lat, user_id]
+      );
+
+      return res.status(201).json({
+        address_id: created.rows[0].id,
+        full_address: formatAddress({
+          houseNumber: existing.house_number,
+          streetName: 'Hope Street',
+          pNumber
+        })
+      });
+    }
+
+    // 2) New street + sequential numbering
     const streetType = chooseStreetType({});
     const streetName = generateStreetName('Hope');
 
@@ -97,16 +138,23 @@ export function registerRoutes(app) {
       [streetName, streetType]
     );
 
+    const existingNumbersRes = await query(
+      `SELECT house_number FROM addresses WHERE street_id=$1`,
+      [street.rows[0].id]
+    );
+    const existingNumbers = existingNumbersRes.rows.map(r => r.house_number);
+    const houseNumber = nextHouseNumber(existingNumbers);
+
     const address = await query(
       `INSERT INTO addresses (street_id, house_number, p_number, unit_designation, coordinates, country_id, user_id)
-       VALUES ($1,'1',1,$2,ST_SetSRID(ST_MakePoint($3,$4),4326)::geography,'NG',$5)
+       VALUES ($1,$2,1,$3,ST_SetSRID(ST_MakePoint($4,$5),4326)::geography,'NG',$6)
        RETURNING id`,
-      [street.rows[0].id, unit_designation || null, coordinates.lng, coordinates.lat, user_id]
+      [street.rows[0].id, houseNumber, unit_designation || null, coordinates.lng, coordinates.lat, user_id]
     );
 
     res.status(201).json({
       address_id: address.rows[0].id,
-      full_address: formatAddress({ houseNumber: '1', streetName: `${streetName} ${streetType}`, pNumber: 1, country: 'Nigeria' })
+      full_address: formatAddress({ houseNumber, streetName: `${streetName} ${streetType}`, pNumber: 1, country: 'Nigeria' })
     });
   });
 
