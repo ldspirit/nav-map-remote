@@ -24,12 +24,19 @@ export function registerRoutes(app) {
     // Simplified: billing country = device_region || sim_country || 'NG'
     const billing_country = device_region || sim_country || 'NG';
 
-    const user = await query(
-      `INSERT INTO users (email, phone, full_name, billing_country, device_region, sim_country, signup_country)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
-       RETURNING id`,
-      [email, phone, full_name, billing_country, device_region || null, sim_country || null, billing_country]
-    );
+    try {
+      var user = await query(
+        `INSERT INTO users (email, phone, full_name, billing_country, device_region, sim_country, signup_country)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         RETURNING id`,
+        [email, phone, full_name, billing_country, device_region || null, sim_country || null, billing_country]
+      );
+    } catch (e) {
+      if (String(e).includes('users_email') || String(e).includes('users_phone') || String(e).includes('duplicate')) {
+        return res.status(409).json({ error: 'user_exists' });
+      }
+      throw e;
+    }
 
     // Create OTP (6-digit, 10 min expiry)
     const code = String(Math.floor(100000 + Math.random() * 900000));
@@ -179,5 +186,27 @@ export function registerRoutes(app) {
     );
     if (row.rows.length === 0) return res.status(404).json({ error: 'not_found' });
     res.json(row.rows[0]);
+  });
+
+  app.get('/api/v1/addresses/search', async (req, res) => {
+    const q = (req.query.q || '').toString().trim();
+    if (!q) return res.json({ results: [], count: 0, query: q });
+
+    const rows = await query(
+      `SELECT a.id, a.house_number, a.p_number, s.name AS street_name
+       FROM addresses a JOIN streets s ON a.street_id=s.id
+       WHERE s.name ILIKE $1
+       LIMIT 10`,
+      [`%${q}%`]
+    );
+
+    res.json({
+      results: rows.rows.map(r => ({
+        address_id: r.id,
+        full_address: `${r.house_number} ${r.street_name} P${r.p_number}`
+      })),
+      count: rows.rows.length,
+      query: q
+    });
   });
 }
