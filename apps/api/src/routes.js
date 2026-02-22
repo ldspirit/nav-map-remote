@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { query } from './db.js';
+import { formatAddress, chooseStreetType, generateStreetName } from '@nav-map/core';
 
 export function registerRoutes(app) {
   app.post('/api/v1/auth/register', async (req, res) => {
@@ -87,10 +88,13 @@ export function registerRoutes(app) {
 
     const { user_id, coordinates, unit_designation } = parsed.data;
 
-    // Simplified: create a placeholder street + address
+    // Placeholder: basic street naming + formatting (to be upgraded with GPS matching & numbering)
+    const streetType = chooseStreetType({});
+    const streetName = generateStreetName('Hope');
+
     const street = await query(
-      `INSERT INTO streets (name, street_type, country_id) VALUES ('Hope', 'Street', 'NG') RETURNING id`,
-      []
+      `INSERT INTO streets (name, street_type, country_id) VALUES ($1,$2,'NG') RETURNING id`,
+      [streetName, streetType]
     );
 
     const address = await query(
@@ -100,7 +104,10 @@ export function registerRoutes(app) {
       [street.rows[0].id, unit_designation || null, coordinates.lng, coordinates.lat, user_id]
     );
 
-    res.status(201).json({ address_id: address.rows[0].id });
+    res.status(201).json({
+      address_id: address.rows[0].id,
+      full_address: formatAddress({ houseNumber: '1', streetName: `${streetName} ${streetType}`, pNumber: 1, country: 'Nigeria' })
+    });
   });
 
   app.get('/api/v1/addresses/:id', async (req, res) => {

@@ -1,1 +1,1 @@
-// Core shared logic will live here
+export * from './address.js';
