@@ -140,7 +140,52 @@ export function registerRoutes(app) {
       });
     }
 
-    // 2) New street + sequential numbering
+    // 2) Try attach to nearest existing street within 100m
+    const nearbyStreet = await query(
+      `SELECT a.street_id
+       FROM addresses a
+       WHERE a.country_id='NG'
+         AND ST_DWithin(
+           a.coordinates::geography,
+           ST_SetSRID(ST_MakePoint($1,$2),4326)::geography,
+           100
+         )
+       ORDER BY ST_Distance(a.coordinates::geography, ST_SetSRID(ST_MakePoint($1,$2),4326)::geography)
+       LIMIT 1`,
+      [coordinates.lng, coordinates.lat]
+    );
+
+    if (nearbyStreet.rows.length > 0) {
+      const streetId = nearbyStreet.rows[0].street_id;
+      const existingNumbersRes = await query(
+        `SELECT house_number FROM addresses WHERE street_id=$1`,
+        [streetId]
+      );
+      const existingNumbers = existingNumbersRes.rows.map(r => r.house_number);
+      const houseNumber = nextHouseNumber(existingNumbers);
+
+      const address = await query(
+        `INSERT INTO addresses (street_id, house_number, p_number, unit_designation, coordinates, country_id, user_id)
+         VALUES ($1,$2,1,$3,ST_SetSRID(ST_MakePoint($4,$5),4326)::geography,'NG',$6)
+         RETURNING id`,
+        [streetId, houseNumber, unit_designation || null, coordinates.lng, coordinates.lat, user_id]
+      );
+
+      return res.status(201).json({
+        address_id: address.rows[0].id,
+        full_address: formatByCountry({
+          countryCode: 'NG',
+          number: houseNumber,
+          street: `Hope Street P1`,
+          unit: unit_designation || '',
+          postal: '100001',
+          city: 'Lagos',
+          state: 'Lagos State'
+        })
+      });
+    }
+
+    // 3) New street + sequential numbering
     const streetType = chooseStreetType({});
 
     // ensure street name uniqueness within 5km radius (addresses as proxy)
