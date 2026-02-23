@@ -28,10 +28,18 @@ export default function Home() {
       zoom: 12
     });
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+    let marker: maplibregl.Marker | null = null;
     map.on('click', e => {
       setCoords({ lat: e.lngLat.lat, lng: e.lngLat.lng });
       setConfirmOpen(true);
+      if (!marker) {
+        marker = new maplibregl.Marker().setLngLat([e.lngLat.lng, e.lngLat.lat]).addTo(map);
+      } else {
+        marker.setLngLat([e.lngLat.lng, e.lngLat.lat]);
+      }
     });
+
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(pos => {
         map.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 13 });
