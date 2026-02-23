@@ -18,6 +18,7 @@ export default function Home() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const searchTimer = useRef<any>(null);
+  const markerRef = useRef<maplibregl.Marker | null>(null);
 
   useEffect(() => {
     if (mapRef.current || !mapContainer.current) return;
@@ -29,14 +30,13 @@ export default function Home() {
     });
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
-    let marker: maplibregl.Marker | null = null;
     map.on('click', e => {
       setCoords({ lat: e.lngLat.lat, lng: e.lngLat.lng });
       setConfirmOpen(true);
-      if (!marker) {
-        marker = new maplibregl.Marker().setLngLat([e.lngLat.lng, e.lngLat.lat]).addTo(map);
+      if (!markerRef.current) {
+        markerRef.current = new maplibregl.Marker().setLngLat([e.lngLat.lng, e.lngLat.lat]).addTo(map);
       } else {
-        marker.setLngLat([e.lngLat.lng, e.lngLat.lat]);
+        markerRef.current.setLngLat([e.lngLat.lng, e.lngLat.lat]);
       }
     });
 
@@ -104,6 +104,17 @@ export default function Home() {
     setResults(json.results || []);
   }
 
+  function selectResult(r: any) {
+    if (!r?.components) return;
+    const marker = markerRef.current;
+    const map = mapRef.current;
+    // no coordinates in response yet; just update address display
+    setAddress(r.full_address);
+    if (map && marker) {
+      // leave marker at last selection
+    }
+  }
+
   return (
     <div>
       <div className="header">
@@ -131,7 +142,9 @@ export default function Home() {
           }} placeholder="Search address" />
           <button className="button" onClick={() => searchAddress()}>Search</button>
           <ul>
-            {results.map((r, i) => <li key={i}>{r.full_address}</li>)}
+            {results.map((r, i) => (
+              <li key={i} style={{ cursor: 'pointer' }} onClick={() => selectResult(r)}>{r.full_address}</li>
+            ))}
           </ul>
         </div>
       </div>
