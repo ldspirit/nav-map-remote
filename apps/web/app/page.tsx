@@ -87,9 +87,10 @@ export default function Home() {
     setConfirmOpen(false);
   }
 
-  async function searchAddress() {
-    if (!search.trim()) return;
-    const res = await fetch(`${API_BASE}/api/v1/addresses/search?q=${encodeURIComponent(search)}&country=NG`);
+  async function searchAddress(q?: string) {
+    const term = (q ?? search).trim();
+    if (!term) return;
+    const res = await fetch(`${API_BASE}/api/v1/addresses/search?q=${encodeURIComponent(term)}&country=NG`);
     const json = await res.json();
     setResults(json.results || []);
   }
@@ -113,8 +114,8 @@ export default function Home() {
         </div>
 
         <div className="panel">
-          <input className="input" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search address" />
-          <button className="button" onClick={searchAddress}>Search</button>
+          <input className="input" value={search} onChange={e => { setSearch(e.target.value); searchAddress(e.target.value); }} placeholder="Search address" />
+          <button className="button" onClick={() => searchAddress()}>Search</button>
           <ul>
             {results.map((r, i) => <li key={i}>{r.full_address}</li>)}
           </ul>
