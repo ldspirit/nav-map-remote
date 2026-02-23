@@ -16,6 +16,7 @@ export default function Home() {
   const [results, setResults] = useState<any[]>([]);
   const [error, setError] = useState<string>('');
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (mapRef.current || !mapContainer.current) return;
@@ -49,12 +50,14 @@ export default function Home() {
       device_region: 'NG',
       coordinates: coords || { lat: 6.5244, lng: 3.3792 }
     };
+    setLoading(true);
     const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
     const json = await res.json();
+    setLoading(false);
     if (!res.ok) {
       setError(json.error || 'Registration failed');
       return;
@@ -68,12 +71,14 @@ export default function Home() {
       return;
     }
     setError('');
+    setLoading(true);
     const res = await fetch(`${API_BASE}/api/v1/addresses/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id: userId, coordinates: coords })
     });
     const json = await res.json();
+    setLoading(false);
     if (!res.ok) {
       setError(json.error || 'Address creation failed');
       return;
@@ -96,14 +101,14 @@ export default function Home() {
           <input className="input" name="name" placeholder="Full name" required />
           <input className="input" name="email" placeholder="Email" type="email" required />
           <input className="input" name="phone" placeholder="Phone" required />
-          <button className="button" type="submit">Register</button>
+          <button className="button" type="submit" disabled={loading}>{loading ? 'Working...' : 'Register'}</button>
         </form>
 
         {error && <div className="error">{error}</div>}
 
         <div className="panel">
           <div>Selected: {coords ? `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}` : 'Tap map'}</div>
-          <button className="button" onClick={() => setConfirmOpen(true)} disabled={!coords}>Create Address</button>
+          <button className="button" onClick={() => setConfirmOpen(true)} disabled={!coords || loading}>{loading ? 'Working...' : 'Create Address'}</button>
           <div>Address: {address}</div>
         </div>
 
@@ -121,7 +126,7 @@ export default function Home() {
           <div className="modal-card">
             <div>Confirm location?</div>
             <div className="panel">{coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}</div>
-            <button className="button" onClick={createAddress}>Confirm</button>
+            <button className="button" onClick={createAddress} disabled={loading}>{loading ? 'Working...' : 'Confirm'}</button>
             <button className="button" onClick={() => setConfirmOpen(false)} style={{ marginLeft: 8, background: '#666' }}>Cancel</button>
           </div>
         </div>
