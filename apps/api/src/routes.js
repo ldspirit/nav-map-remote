@@ -55,6 +55,7 @@ export function registerRoutes(app) {
       user_id: user.rows[0].id,
       phone_verification_required: true,
       otp_sent_to: phone.replace(/.(?=.{3})/g, '*'),
+      billing_country: billing_country,
       detected_conflicts: {
         device_region: device_region || null,
         sim_country: sim_country || null,
