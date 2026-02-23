@@ -151,7 +151,8 @@ export function registerRoutes(app) {
           postal_code: '100001',
           city: 'Lagos',
           state: 'Lagos State',
-          country: 'Nigeria'
+          country: 'Nigeria',
+          country_code: 'NG'
         }
       });
     }
@@ -205,7 +206,8 @@ export function registerRoutes(app) {
           postal_code: '100001',
           city: 'Lagos',
           state: 'Lagos State',
-          country: 'Nigeria'
+          country: 'Nigeria',
+          country_code: 'NG'
         }
       });
     }
@@ -271,7 +273,8 @@ export function registerRoutes(app) {
         postal_code: '100001',
         city: 'Lagos',
         state: 'Lagos State',
-        country: 'Nigeria'
+        country: 'Nigeria',
+        country_code: 'NG'
       }
     });
   });
