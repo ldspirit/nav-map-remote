@@ -90,7 +90,10 @@ export function registerRoutes(app) {
   app.post('/api/v1/addresses/create', async (req, res) => {
     const schema = z.object({
       user_id: z.string().uuid(),
-      coordinates: z.object({ lat: z.number(), lng: z.number() }),
+      coordinates: z.object({
+        lat: z.number().min(-90).max(90),
+        lng: z.number().min(-180).max(180)
+      }),
       property_type: z.string().optional(),
       unit_designation: z.string().optional()
     });
