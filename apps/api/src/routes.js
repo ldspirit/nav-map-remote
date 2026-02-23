@@ -89,7 +89,7 @@ export function registerRoutes(app) {
     // cleanup used OTPs for this phone
     await query(`DELETE FROM otp_codes WHERE phone=$1`, [phone]);
 
-    res.json({ ok: true });
+    res.json({ ok: true, verified: true, user_id });
   });
 
   app.post('/api/v1/addresses/create', async (req, res) => {
