@@ -23,7 +23,11 @@ export function registerRoutes(app) {
     const normalizedPhone = phone.replace(/\s+/g, '');
 
     // Simplified: billing country = device_region || sim_country || 'NG'
-    const billing_country = device_region || sim_country || 'NG';
+    const billing_country = (device_region || sim_country || 'NG').toUpperCase();
+    const supported = new Set(['NG','KE','GH','ZA']);
+    if (!supported.has(billing_country)) {
+      return res.status(400).json({ error: 'unsupported_country' });
+    }
 
     try {
       var user = await query(
