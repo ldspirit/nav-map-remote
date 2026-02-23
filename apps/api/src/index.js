@@ -15,6 +15,12 @@ app.get('/health', (_req, res) => {
 
 registerRoutes(app);
 
+// basic error handler
+app.use((err, _req, res, _next) => {
+  console.error(err);
+  res.status(500).json({ error: 'server_error' });
+});
+
 const port = process.env.PORT || 4000;
 app.listen(port, () => {
   console.log(`api listening on ${port}`);
