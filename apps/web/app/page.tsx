@@ -1,14 +1,14 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import maplibregl from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
+import { useRef, useState } from 'react';
+import MapView from './components/MapView';
+import RegisterForm from './components/RegisterForm';
+import AddressPanel from './components/AddressPanel';
+import SearchBar from './components/SearchBar';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:4000';
 
 export default function Home() {
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const mapContainer = useRef<HTMLDivElement | null>(null);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [address, setAddress] = useState<string>('');
   const [userId, setUserId] = useState<string>('');
@@ -21,55 +21,22 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [toast, setToast] = useState('');
   const searchTimer = useRef<any>(null);
-  const markerRef = useRef<maplibregl.Marker | null>(null);
 
-  useEffect(() => {
-    if (mapRef.current || !mapContainer.current) return;
-    const map = new maplibregl.Map({
-      container: mapContainer.current,
-      style: 'https://demotiles.maplibre.org/style.json',
-      center: [3.3792, 6.5244],
-      zoom: 12
-    });
-    map.addControl(new maplibregl.NavigationControl(), 'top-right');
-
-    map.on('click', e => {
-      setCoords({ lat: e.lngLat.lat, lng: e.lngLat.lng });
-      setConfirmOpen(true);
-      if (!markerRef.current) {
-        markerRef.current = new maplibregl.Marker().setLngLat([e.lngLat.lng, e.lngLat.lat]).addTo(map);
-      } else {
-        markerRef.current.setLngLat([e.lngLat.lng, e.lngLat.lat]);
-      }
-    });
-
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(pos => {
-        map.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 13 });
-      });
-    }
-    mapRef.current = map;
-  }, []);
-
-  async function register(e: any) {
-    e.preventDefault();
+  async function register(data: any) {
     setError('');
-    const form = new FormData(e.target);
     const payload = {
-      email: form.get('email'),
-      phone: form.get('phone'),
-      full_name: form.get('name'),
+      email: data.email,
+      phone: data.phone,
+      full_name: data.name,
       device_region: 'NG',
       coordinates: coords || { lat: 6.5244, lng: 3.3792 }
     };
-    setLoading(true);
     const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
     const json = await res.json();
-    setLoading(false);
     if (!res.ok) {
       setError(json.error || 'Registration failed');
       return;
@@ -101,76 +68,52 @@ export default function Home() {
     setConfirmOpen(false);
   }
 
-  async function searchAddress(q?: string) {
-    const term = (q ?? search).trim();
-    if (!term) return;
-    const res = await fetch(`${API_BASE}/api/v1/addresses/search?q=${encodeURIComponent(term)}&country=NG`);
+  async function searchAddress(term?: string) {
+    const q = (term ?? search).trim();
+    if (!q) return;
+    const res = await fetch(`${API_BASE}/api/v1/addresses/search?q=${encodeURIComponent(q)}&country=NG`);
     const json = await res.json();
     setResults(json.results || []);
   }
 
   function selectResult(r: any, idx: number) {
     if (!r?.components) return;
-    const marker = markerRef.current;
-    const map = mapRef.current;
     setSelected(idx);
-    // no coordinates in response yet; just update address display
     setAddress(r.full_address);
-    if (map && marker) {
-      // leave marker at last selection
-    }
   }
 
   return (
     <div>
       <div className="header">
-        <form onSubmit={register}>
-          <input className="input" name="name" placeholder="Full name" required />
-          <input className="input" name="email" placeholder="Email" type="email" required />
-          <input className="input" name="phone" placeholder="Phone" required />
-          <button className="button" type="submit" disabled={loading}>{loading ? 'Working...' : 'Register'}</button>
-        </form>
-
+        <RegisterForm onRegister={register} />
         {error && <div className="error">{error}</div>}
 
-        <div className="panel">
-          <div>Selected: {coords ? `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}` : 'Tap map'}</div>
-          <button className="button" onClick={() => setConfirmOpen(true)} disabled={!coords || loading}>{loading ? 'Working...' : 'Create Address'}</button>
-          <div>Address: {address}</div>
-          {address && (
-            <button className="button" onClick={async () => {
-              await navigator.clipboard.writeText(address);
-              setCopied(true);
-              setToast('Copied to clipboard');
-              setTimeout(() => { setCopied(false); setToast(''); }, 1500);
-            }} style={{ background: '#2e7d32' }}>
-              {copied ? 'Copied!' : 'Copy Address'}
-            </button>
-          )}
-        </div>
+        <AddressPanel
+          coords={coords}
+          address={address}
+          loading={loading}
+          onCreate={() => setConfirmOpen(true)}
+          onCopy={async () => {
+            await navigator.clipboard.writeText(address);
+            setCopied(true);
+            setToast('Copied to clipboard');
+            setTimeout(() => { setCopied(false); setToast(''); }, 1500);
+          }}
+        />
 
-        <div className="panel">
-          <input className="input" value={search} onChange={e => {
-            const val = e.target.value;
+        <SearchBar
+          value={search}
+          onChange={(val) => {
             setSearch(val);
             if (searchTimer.current) clearTimeout(searchTimer.current);
             searchTimer.current = setTimeout(() => searchAddress(val), 300);
-          }} placeholder="Search address" />
-          <button className="button" onClick={() => searchAddress()}>Search</button>
-          <button className="button" onClick={() => { setResults([]); setSearch(''); setSelected(null); }} style={{ marginLeft: 8, background: '#666' }}>Clear</button>
-          <ul>
-            {results.length === 0 && search.trim() && (
-              <li style={{ color: '#666', fontStyle: 'italic' }}>No results</li>
-            )}
-            {results.map((r, i) => (
-              <li key={i}
-                  style={{ cursor: 'pointer', background: selected === i ? '#eef3ff' : 'transparent', padding: '4px', borderRadius: '4px' }}
-                  onClick={() => selectResult(r, i)}>
-                {r.full_address}
-              </li>
-            ))}
-          </ul>
-        </div>
+          }}
+          onSearch={() => searchAddress()}
+          onClear={() => { setResults([]); setSearch(''); setSelected(null); }}
+          results={results}
+          onSelect={selectResult}
+          selected={selected}
+        />
       </div>
 
       {confirmOpen && coords && (
@@ -190,7 +133,7 @@ export default function Home() {
         </div>
       )}
 
-      <div ref={mapContainer} className="map" />
+      <MapView onSelect={(c) => { setCoords(c); setConfirmOpen(true); }} />
     </div>
   );
 }
