@@ -141,7 +141,8 @@ export default function Home() {
             <button className="button" onClick={async () => {
               await navigator.clipboard.writeText(address);
               setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
+              setToast('Copied to clipboard');
+              setTimeout(() => { setCopied(false); setToast(''); }, 1500);
             }} style={{ background: '#2e7d32' }}>
               {copied ? 'Copied!' : 'Copy Address'}
             </button>
