@@ -32,8 +32,7 @@ async function mockQuery(text, params = []) {
   if (text.includes('INSERT INTO users')) {
     const [email, phone, full_name, billing_country, device_region, sim_country, signup_country] = params;
     if (store.users.some(u => u.email === email || u.phone === phone)) {
-      const err = new Error('duplicate');
-      throw err;
+      throw new Error('duplicate');
     }
     const id = uuid();
     store.users.push({ id, email, phone, full_name, billing_country, device_region, sim_country, signup_country });
@@ -64,7 +63,15 @@ async function mockQuery(text, params = []) {
     return { rows: [] };
   }
 
-  // Addresses: nearby match
+  // Street lookup by id
+  if (text.includes('SELECT name, street_type FROM streets')) {
+    const id = params[0];
+    const street = store.streets.find(s => s.id === id);
+    if (!street) return { rows: [] };
+    return { rows: [{ name: street.name, street_type: street.street_type }] };
+  }
+
+  // Addresses: nearby match (12m)
   if (text.includes('FROM addresses') && text.includes('ST_DWithin') && text.includes('LIMIT 1')) {
     const lng = params[0];
     const lat = params[1];
@@ -100,9 +107,9 @@ async function mockQuery(text, params = []) {
   }
 
   if (text.startsWith('INSERT INTO streets')) {
-    const [name, street_type] = params;
+    const [name, street_type, country_id] = params;
     const id = uuid();
-    store.streets.push({ id, name, street_type, country_id: 'NG' });
+    store.streets.push({ id, name, street_type, country_id: country_id || 'NG' });
     return { rows: [{ id }] };
   }
 
@@ -113,24 +120,39 @@ async function mockQuery(text, params = []) {
   }
 
   if (text.includes('INSERT INTO addresses')) {
-    const [street_id, house_number, p_number_or_unit, unit_designation, lng, lat, user_id] = params;
-    let p_number = 1;
-    let unit = null;
-    if (typeof p_number_or_unit === 'number') {
-      p_number = p_number_or_unit;
-      unit = unit_designation;
+    // Handles both 7-param (old) and 8-param (new with country_id parameterized) forms
+    let street_id, house_number, p_number, unit, lng, lat, country_id, user_id;
+    if (params.length >= 8) {
+      [street_id, house_number, p_number, unit, lng, lat, country_id, user_id] = params;
+      if (typeof p_number !== 'number') {
+        // p_number=1 case: params are [street_id, house_number, 1, unit, lng, lat, country_id, user_id]
+        // already correct
+      }
     } else {
-      unit = p_number_or_unit;
+      const [sid, hn, p_or_unit, ud, ln, lt, uid] = params;
+      street_id = sid;
+      house_number = hn;
+      lng = ln;
+      lat = lt;
+      user_id = uid;
+      country_id = 'NG';
+      if (typeof p_or_unit === 'number') {
+        p_number = p_or_unit;
+        unit = ud;
+      } else {
+        p_number = 1;
+        unit = p_or_unit;
+      }
     }
     const id = uuid();
     store.addresses.push({
       id,
       street_id,
       house_number,
-      p_number,
+      p_number: typeof p_number === 'number' ? p_number : 1,
       unit_designation: unit,
       coordinates: { lat, lng },
-      country_id: 'NG',
+      country_id: country_id || 'NG',
       user_id
     });
     return { rows: [{ id }] };
@@ -147,13 +169,14 @@ async function mockQuery(text, params = []) {
   if (text.includes('FROM addresses a JOIN streets s') && text.includes('ILIKE')) {
     const q = params[0].replace(/%/g, '').toLowerCase();
     const country = params[1];
+    const limit = params[2] || 50;
     const rows = store.addresses
       .map(a => {
         const s = store.streets.find(st => st.id === a.street_id);
-        return { id: a.id, house_number: a.house_number, p_number: a.p_number, street_name: s?.name || '' , country_id: s?.country_id || 'NG'};
+        return { id: a.id, house_number: a.house_number, p_number: a.p_number, street_name: s?.name || '', country_id: s?.country_id || 'NG' };
       })
       .filter(r => r.country_id === country && r.street_name.toLowerCase().includes(q))
-      .slice(0, 50);
+      .slice(0, limit);
     return { rows };
   }
 
@@ -172,7 +195,9 @@ const pool = MOCK
   ? { query: mockQuery }
   : new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false }
+      ssl: process.env.DATABASE_URL?.includes('localhost')
+        ? false
+        : { rejectUnauthorized: true }
     });
 
 export async function query(text, params) {

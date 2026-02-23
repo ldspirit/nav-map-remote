@@ -1,9 +1,14 @@
+import crypto from 'crypto';
 import { z } from 'zod';
 import { query } from './db.js';
-import { formatAddress, chooseStreetType, nextHouseNumber, formatByCountry, pickStreetName } from '@nav-map/core';
+import { chooseStreetType, nextHouseNumber, formatByCountry, pickStreetName } from '@nav-map/core';
+
+const SUPPORTED_COUNTRIES = new Set(['NG', 'KE', 'GH', 'ZA']);
 
 export function registerRoutes(app) {
-  app.post('/api/v1/auth/register', async (req, res) => {
+  // ---------- Auth ----------
+
+  app.post('/api/v1/auth/register', async (req, res, next) => {
     const schema = z.object({
       email: z.string().email(),
       phone: z.string().min(6),
@@ -22,190 +27,272 @@ export function registerRoutes(app) {
     const { email, phone, full_name, device_region, sim_country, coordinates } = parsed.data;
     const normalizedPhone = phone.replace(/\s+/g, '');
 
-    // Simplified: billing country = device_region || sim_country || 'NG'
     const billing_country = (device_region || sim_country || 'NG').toUpperCase();
-    const supported = new Set(['NG','KE','GH','ZA']);
-    if (!supported.has(billing_country)) {
+    if (!SUPPORTED_COUNTRIES.has(billing_country)) {
       return res.status(400).json({ error: 'unsupported_country' });
     }
 
     try {
-      var user = await query(
+      const user = await query(
         `INSERT INTO users (email, phone, full_name, billing_country, device_region, sim_country, signup_country)
          VALUES ($1,$2,$3,$4,$5,$6,$7)
          RETURNING id`,
         [email, normalizedPhone, full_name, billing_country, device_region || null, sim_country || null, billing_country]
       );
+
+      // Generate cryptographically secure 6-digit OTP (10 min expiry)
+      const code = String(crypto.randomInt(100000, 999999));
+      const expires = new Date(Date.now() + 10 * 60 * 1000);
+      await query(
+        `INSERT INTO otp_codes (phone, code, expires_at) VALUES ($1,$2,$3)`,
+        [normalizedPhone, code, expires]
+      );
+
+      const response = {
+        user_id: user.rows[0].id,
+        phone_verification_required: true,
+        otp_sent_to: phone.replace(/.(?=.{3})/g, '*'),
+        billing_country,
+        detected_conflicts: {
+          device_region: device_region || null,
+          sim_country: sim_country || null,
+          gps_country: billing_country,
+          ip_country: billing_country,
+          conflict_detected: false
+        }
+      };
+
+      if (process.env.MOCK_DB === '1') {
+        response.debug_otp = code;
+      }
+
+      res.status(201).json(response);
     } catch (e) {
       if (String(e).includes('users_email') || String(e).includes('users_phone') || String(e).includes('duplicate')) {
         return res.status(409).json({ error: 'user_exists' });
       }
-      throw e;
+      next(e);
     }
-
-    // Create OTP (6-digit, 10 min expiry)
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    const expires = new Date(Date.now() + 10 * 60 * 1000);
-    await query(
-      `INSERT INTO otp_codes (phone, code, expires_at) VALUES ($1,$2,$3)`
-      , [normalizedPhone, code, expires]
-    );
-
-    const response = {
-      user_id: user.rows[0].id,
-      phone_verification_required: true,
-      otp_sent_to: phone.replace(/.(?=.{3})/g, '*'),
-      billing_country: billing_country,
-      detected_conflicts: {
-        device_region: device_region || null,
-        sim_country: sim_country || null,
-        gps_country: billing_country,
-        ip_country: billing_country,
-        conflict_detected: false
-      }
-    };
-
-    if (process.env.MOCK_DB === '1') {
-      response.debug_otp = code;
-    }
-
-    res.status(201).json(response);
   });
 
-  app.post('/api/v1/auth/verify-phone', async (req, res) => {
-    const schema = z.object({
-      user_id: z.string().uuid(),
-      otp_code: z.string().min(4)
-    });
-    const parsed = schema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: 'invalid_input' });
-
-    const { user_id, otp_code } = parsed.data;
-
-    const userRes = await query('SELECT phone FROM users WHERE id=$1', [user_id]);
-    if (userRes.rows.length === 0) return res.status(404).json({ error: 'user_not_found' });
-
-    const phone = userRes.rows[0].phone;
-    const otpRes = await query(
-      `SELECT id FROM otp_codes WHERE phone=$1 AND code=$2 AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1`,
-      [phone, otp_code]
-    );
-    if (otpRes.rows.length === 0) return res.status(401).json({ error: 'invalid_otp' });
-
-    // cleanup used OTPs for this phone
-    await query(`DELETE FROM otp_codes WHERE phone=$1`, [phone]);
-
-    res.json({ ok: true, verified: true, user_id });
-  });
-
-  app.post('/api/v1/addresses/create', async (req, res) => {
-    const schema = z.object({
-      user_id: z.string().uuid(),
-      coordinates: z.object({
-        lat: z.number().min(-90).max(90),
-        lng: z.number().min(-180).max(180)
-      }),
-      property_type: z.string().optional(),
-      unit_designation: z.string().optional()
-    });
-    const parsed = schema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: 'invalid_input' });
-
-    const { user_id, coordinates, unit_designation } = parsed.data;
-    const countryCode = 'NG';
-
-    // 1) GPS match to existing address (P-system)
-    const nearby = await query(
-      `SELECT id, street_id, house_number, p_number
-       FROM addresses
-       WHERE country_id = $3
-         AND ST_DWithin(
-           coordinates::geography,
-           ST_SetSRID(ST_MakePoint($1,$2),4326)::geography,
-           12
-         )
-       ORDER BY created_at ASC
-       LIMIT 1`,
-      [coordinates.lng, coordinates.lat, countryCode]
-    );
-
-    if (nearby.rows.length > 0) {
-      const existing = nearby.rows[0];
-      const nextP = await query(
-        `SELECT COALESCE(MAX(p_number),0) + 1 AS next_p
-         FROM addresses WHERE street_id=$1 AND house_number=$2`,
-        [existing.street_id, existing.house_number]
-      );
-      const pNumber = nextP.rows[0].next_p;
-
-      const created = await query(
-        `INSERT INTO addresses (street_id, house_number, p_number, unit_designation, coordinates, country_id, user_id)
-         VALUES ($1,$2,$3,$4,ST_SetSRID(ST_MakePoint($5,$6),4326)::geography,'NG',$7)
-         RETURNING id`,
-        [existing.street_id, existing.house_number, pNumber, unit_designation || null, coordinates.lng, coordinates.lat, user_id]
-      );
-
-      return res.status(201).json({
-        address_id: created.rows[0].id,
-        full_address: formatByCountry({
-          countryCode: 'NG',
-          number: existing.house_number,
-          street: `Hope Street P${pNumber}`,
-          unit: unit_designation || '',
-          postal: '100001',
-          city: 'Lagos',
-          state: 'Lagos State'
-        }),
-        components: {
-          house_number: existing.house_number,
-          street_name: 'Hope Street',
-          p_number: pNumber,
-          postal_code: '100001',
-          city: 'Lagos',
-          state: 'Lagos State',
-          country: 'Nigeria',
-          country_code: 'NG'
-        }
+  app.post('/api/v1/auth/verify-phone', async (req, res, next) => {
+    try {
+      const schema = z.object({
+        user_id: z.string().uuid(),
+        otp_code: z.string().min(4)
       });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: 'invalid_input' });
+
+      const { user_id, otp_code } = parsed.data;
+
+      const userRes = await query('SELECT phone FROM users WHERE id=$1', [user_id]);
+      if (userRes.rows.length === 0) return res.status(404).json({ error: 'user_not_found' });
+
+      const phone = userRes.rows[0].phone;
+      const otpRes = await query(
+        `SELECT id FROM otp_codes WHERE phone=$1 AND code=$2 AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1`,
+        [phone, otp_code]
+      );
+      if (otpRes.rows.length === 0) return res.status(401).json({ error: 'invalid_otp' });
+
+      await query(`DELETE FROM otp_codes WHERE phone=$1`, [phone]);
+
+      res.json({ ok: true, verified: true, user_id });
+    } catch (e) {
+      next(e);
     }
+  });
 
-    // 2) Try attach to nearest existing street within 100m
-    const nearbyStreet = await query(
-      `SELECT a.street_id
-       FROM addresses a
-       WHERE a.country_id=$3
-         AND ST_DWithin(
-           a.coordinates::geography,
-           ST_SetSRID(ST_MakePoint($1,$2),4326)::geography,
-           100
-         )
-       ORDER BY ST_Distance(a.coordinates::geography, ST_SetSRID(ST_MakePoint($1,$2),4326)::geography)
-       LIMIT 1`,
-      [coordinates.lng, coordinates.lat, countryCode]
-    );
+  // ---------- Addresses ----------
 
-    if (nearbyStreet.rows.length > 0) {
-      const streetId = nearbyStreet.rows[0].street_id;
+  app.post('/api/v1/addresses/create', async (req, res, next) => {
+    try {
+      const schema = z.object({
+        user_id: z.string().uuid(),
+        coordinates: z.object({
+          lat: z.number().min(-90).max(90),
+          lng: z.number().min(-180).max(180)
+        }),
+        property_type: z.string().optional(),
+        unit_designation: z.string().optional()
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: 'invalid_input' });
+
+      const { user_id, coordinates, unit_designation } = parsed.data;
+      const countryCode = 'NG';
+
+      // 1) GPS match to existing address (P-system)
+      const nearby = await query(
+        `SELECT id, street_id, house_number, p_number
+         FROM addresses
+         WHERE country_id = $3
+           AND ST_DWithin(
+             coordinates::geography,
+             ST_SetSRID(ST_MakePoint($1,$2),4326)::geography,
+             12
+           )
+         ORDER BY created_at ASC
+         LIMIT 1`,
+        [coordinates.lng, coordinates.lat, countryCode]
+      );
+
+      if (nearby.rows.length > 0) {
+        const existing = nearby.rows[0];
+        const nextP = await query(
+          `SELECT COALESCE(MAX(p_number),0) + 1 AS next_p
+           FROM addresses WHERE street_id=$1 AND house_number=$2`,
+          [existing.street_id, existing.house_number]
+        );
+        const pNumber = nextP.rows[0].next_p;
+
+        const streetRes = await query('SELECT name, street_type FROM streets WHERE id=$1', [existing.street_id]);
+        const streetName = streetRes.rows.length > 0 ? streetRes.rows[0].name : 'Hope';
+        const streetType = streetRes.rows.length > 0 ? streetRes.rows[0].street_type : 'Street';
+        const fullStreet = `${streetName} ${streetType}`;
+
+        const created = await query(
+          `INSERT INTO addresses (street_id, house_number, p_number, unit_designation, coordinates, country_id, user_id)
+           VALUES ($1,$2,$3,$4,ST_SetSRID(ST_MakePoint($5,$6),4326)::geography,$7,$8)
+           RETURNING id`,
+          [existing.street_id, existing.house_number, pNumber, unit_designation || null, coordinates.lng, coordinates.lat, countryCode, user_id]
+        );
+
+        return res.status(201).json({
+          address_id: created.rows[0].id,
+          full_address: formatByCountry({
+            countryCode,
+            number: existing.house_number,
+            street: `${fullStreet} P${pNumber}`,
+            unit: unit_designation || '',
+            postal: '100001',
+            city: 'Lagos',
+            state: 'Lagos State'
+          }),
+          components: {
+            house_number: existing.house_number,
+            street_name: fullStreet,
+            p_number: pNumber,
+            postal_code: '100001',
+            city: 'Lagos',
+            state: 'Lagos State',
+            country: 'Nigeria',
+            country_code: countryCode
+          }
+        });
+      }
+
+      // 2) Try attach to nearest existing street within 100m
+      const nearbyStreet = await query(
+        `SELECT a.street_id
+         FROM addresses a
+         WHERE a.country_id=$3
+           AND ST_DWithin(
+             a.coordinates::geography,
+             ST_SetSRID(ST_MakePoint($1,$2),4326)::geography,
+             100
+           )
+         ORDER BY ST_Distance(a.coordinates::geography, ST_SetSRID(ST_MakePoint($1,$2),4326)::geography)
+         LIMIT 1`,
+        [coordinates.lng, coordinates.lat, countryCode]
+      );
+
+      if (nearbyStreet.rows.length > 0) {
+        const streetId = nearbyStreet.rows[0].street_id;
+        const existingNumbersRes = await query(
+          `SELECT house_number FROM addresses WHERE street_id=$1`,
+          [streetId]
+        );
+        const existingNumbers = existingNumbersRes.rows.map(r => r.house_number);
+        const houseNumber = nextHouseNumber(existingNumbers);
+
+        const streetRes = await query('SELECT name, street_type FROM streets WHERE id=$1', [streetId]);
+        const streetName = streetRes.rows.length > 0 ? streetRes.rows[0].name : 'Hope';
+        const streetType = streetRes.rows.length > 0 ? streetRes.rows[0].street_type : 'Street';
+        const fullStreet = `${streetName} ${streetType}`;
+
+        const address = await query(
+          `INSERT INTO addresses (street_id, house_number, p_number, unit_designation, coordinates, country_id, user_id)
+           VALUES ($1,$2,1,$3,ST_SetSRID(ST_MakePoint($4,$5),4326)::geography,$6,$7)
+           RETURNING id`,
+          [streetId, houseNumber, unit_designation || null, coordinates.lng, coordinates.lat, countryCode, user_id]
+        );
+
+        return res.status(201).json({
+          address_id: address.rows[0].id,
+          full_address: formatByCountry({
+            countryCode,
+            number: houseNumber,
+            street: `${fullStreet} P1`,
+            unit: unit_designation || '',
+            postal: '100001',
+            city: 'Lagos',
+            state: 'Lagos State'
+          }),
+          components: {
+            house_number: houseNumber,
+            street_name: fullStreet,
+            p_number: 1,
+            postal_code: '100001',
+            city: 'Lagos',
+            state: 'Lagos State',
+            country: 'Nigeria',
+            country_code: countryCode
+          }
+        });
+      }
+
+      // 3) New street + sequential numbering
+      const streetType = chooseStreetType({});
+
+      // ensure street name uniqueness within 5km radius
+      let streetName = pickStreetName(countryCode);
+      const existingNames = await query(
+        `SELECT DISTINCT s.name
+         FROM streets s
+         JOIN addresses a ON a.street_id = s.id
+         WHERE s.country_id=$3
+           AND ST_DWithin(
+             a.coordinates::geography,
+             ST_SetSRID(ST_MakePoint($1,$2),4326)::geography,
+             5000
+           )`,
+        [coordinates.lng, coordinates.lat, countryCode]
+      );
+      const used = new Set(existingNames.rows.map(r => r.name));
+      let attempts = 0;
+      while (used.has(streetName) && attempts < 10) {
+        streetName = pickStreetName(countryCode);
+        attempts++;
+      }
+
+      const street = await query(
+        `INSERT INTO streets (name, street_type, country_id) VALUES ($1,$2,$3) RETURNING id`,
+        [streetName, streetType, countryCode]
+      );
+
       const existingNumbersRes = await query(
         `SELECT house_number FROM addresses WHERE street_id=$1`,
-        [streetId]
+        [street.rows[0].id]
       );
       const existingNumbers = existingNumbersRes.rows.map(r => r.house_number);
       const houseNumber = nextHouseNumber(existingNumbers);
+      const fullStreet = `${streetName} ${streetType}`;
 
       const address = await query(
         `INSERT INTO addresses (street_id, house_number, p_number, unit_designation, coordinates, country_id, user_id)
-         VALUES ($1,$2,1,$3,ST_SetSRID(ST_MakePoint($4,$5),4326)::geography,'NG',$6)
+         VALUES ($1,$2,1,$3,ST_SetSRID(ST_MakePoint($4,$5),4326)::geography,$6,$7)
          RETURNING id`,
-        [streetId, houseNumber, unit_designation || null, coordinates.lng, coordinates.lat, user_id]
+        [street.rows[0].id, houseNumber, unit_designation || null, coordinates.lng, coordinates.lat, countryCode, user_id]
       );
 
-      return res.status(201).json({
+      res.status(201).json({
         address_id: address.rows[0].id,
         full_address: formatByCountry({
-          countryCode: 'NG',
+          countryCode,
           number: houseNumber,
-          street: `Hope Street P1`,
+          street: `${fullStreet} P1`,
           unit: unit_designation || '',
           postal: '100001',
           city: 'Lagos',
@@ -213,136 +300,83 @@ export function registerRoutes(app) {
         }),
         components: {
           house_number: houseNumber,
-          street_name: 'Hope Street',
+          street_name: fullStreet,
           p_number: 1,
           postal_code: '100001',
           city: 'Lagos',
           state: 'Lagos State',
           country: 'Nigeria',
-          country_code: 'NG'
+          country_code: countryCode
         }
       });
+    } catch (e) {
+      next(e);
     }
-
-    // 3) New street + sequential numbering
-    const streetType = chooseStreetType({});
-
-    // ensure street name uniqueness within 5km radius (addresses as proxy)
-    let streetName = pickStreetName('NG');
-    const existingNames = await query(
-      `SELECT DISTINCT s.name
-       FROM streets s
-       JOIN addresses a ON a.street_id = s.id
-       WHERE s.country_id=$3
-         AND ST_DWithin(
-           a.coordinates::geography,
-           ST_SetSRID(ST_MakePoint($1,$2),4326)::geography,
-           5000
-         )`,
-      [coordinates.lng, coordinates.lat, countryCode]
-    );
-    const used = new Set(existingNames.rows.map(r => r.name));
-    let attempts = 0;
-    while (used.has(streetName) && attempts < 10) {
-      streetName = pickStreetName('NG');
-      attempts++;
-    }
-
-    const street = await query(
-      `INSERT INTO streets (name, street_type, country_id) VALUES ($1,$2,'NG') RETURNING id`,
-      [streetName, streetType]
-    );
-
-    const existingNumbersRes = await query(
-      `SELECT house_number FROM addresses WHERE street_id=$1`,
-      [street.rows[0].id]
-    );
-    const existingNumbers = existingNumbersRes.rows.map(r => r.house_number);
-    const houseNumber = nextHouseNumber(existingNumbers);
-
-    const address = await query(
-      `INSERT INTO addresses (street_id, house_number, p_number, unit_designation, coordinates, country_id, user_id)
-       VALUES ($1,$2,1,$3,ST_SetSRID(ST_MakePoint($4,$5),4326)::geography,'NG',$6)
-       RETURNING id`,
-      [street.rows[0].id, houseNumber, unit_designation || null, coordinates.lng, coordinates.lat, user_id]
-    );
-
-    res.status(201).json({
-      address_id: address.rows[0].id,
-      full_address: formatByCountry({
-        countryCode: 'NG',
-        number: houseNumber,
-        street: `${streetName} ${streetType} P1`,
-        unit: unit_designation || '',
-        postal: '100001',
-        city: 'Lagos',
-        state: 'Lagos State'
-      }),
-      components: {
-        house_number: houseNumber,
-        street_name: `${streetName} ${streetType}`,
-        p_number: 1,
-        postal_code: '100001',
-        city: 'Lagos',
-        state: 'Lagos State',
-        country: 'Nigeria',
-        country_code: 'NG'
-      }
-    });
   });
 
-  app.get('/api/v1/addresses/search', async (req, res) => {
-    const q = (req.query.q || '').toString().trim();
-    const limit = Math.min(parseInt(req.query.limit || '10', 10), 50);
-    const country = (req.query.country || 'NG').toString().trim().toUpperCase();
-    if (!q) return res.json({ results: [], count: 0, query: q });
+  app.get('/api/v1/addresses/search', async (req, res, next) => {
+    try {
+      const q = (req.query.q || '').toString().trim();
+      const limit = Math.min(parseInt(req.query.limit || '10', 10) || 10, 50);
+      const country = (req.query.country || 'NG').toString().trim().toUpperCase();
+      if (!q) return res.json({ results: [], count: 0, query: q });
 
-    const rows = await query(
-      `SELECT a.id, a.house_number, a.p_number, s.name AS street_name,
-              ST_Y(a.coordinates::geometry) AS lat,
-              ST_X(a.coordinates::geometry) AS lng
-       FROM addresses a JOIN streets s ON a.street_id=s.id
-       WHERE s.name ILIKE $1 AND s.country_id=$2
-       LIMIT ${limit}`,
-      [`%${q}%`, country]
-    );
+      const rows = await query(
+        `SELECT a.id, a.house_number, a.p_number, s.name AS street_name,
+                ST_Y(a.coordinates::geometry) AS lat,
+                ST_X(a.coordinates::geometry) AS lng
+         FROM addresses a JOIN streets s ON a.street_id=s.id
+         WHERE s.name ILIKE $1 AND s.country_id=$2
+         LIMIT $3`,
+        [`%${q}%`, country, limit]
+      );
 
-    res.json({
-      results: rows.rows.map(r => ({
-        address_id: r.id,
-        full_address: formatByCountry({
-          countryCode: 'NG',
-          number: r.house_number,
-          street: `${r.street_name} P${r.p_number}`,
-          postal: '100001',
-          city: 'Lagos',
-          state: 'Lagos State'
-        }),
-        components: {
-          house_number: r.house_number,
-          street_name: r.street_name,
-          p_number: r.p_number,
-          postal_code: '100001',
-          city: 'Lagos',
-          state: 'Lagos State',
-          country: 'Nigeria',
-          country_code: 'NG'
-        },
-        coordinates: { lat: Number(r.lat), lng: Number(r.lng) }
-      })),
-      count: rows.rows.length,
-      query: q
-    });
+      res.json({
+        results: rows.rows.map(r => ({
+          address_id: r.id,
+          full_address: formatByCountry({
+            countryCode: country,
+            number: r.house_number,
+            street: `${r.street_name} P${r.p_number}`,
+            postal: '100001',
+            city: 'Lagos',
+            state: 'Lagos State'
+          }),
+          components: {
+            house_number: r.house_number,
+            street_name: r.street_name,
+            p_number: r.p_number,
+            postal_code: '100001',
+            city: 'Lagos',
+            state: 'Lagos State',
+            country: 'Nigeria',
+            country_code: country
+          },
+          coordinates: { lat: Number(r.lat), lng: Number(r.lng) }
+        })),
+        count: rows.rows.length,
+        query: q
+      });
+    } catch (e) {
+      next(e);
+    }
   });
 
-  app.get('/api/v1/addresses/:id', async (req, res) => {
-    const { id } = req.params;
-    const row = await query(
-      `SELECT a.id, a.house_number, a.p_number, s.name AS street_name
-       FROM addresses a JOIN streets s ON a.street_id=s.id WHERE a.id=$1`,
-      [id]
-    );
-    if (row.rows.length === 0) return res.status(404).json({ error: 'not_found' });
-    res.json(row.rows[0]);
+  app.get('/api/v1/addresses/:id', async (req, res, next) => {
+    try {
+      const schema = z.object({ id: z.string().uuid() });
+      const parsed = schema.safeParse(req.params);
+      if (!parsed.success) return res.status(400).json({ error: 'invalid_id' });
+
+      const row = await query(
+        `SELECT a.id, a.house_number, a.p_number, s.name AS street_name
+         FROM addresses a JOIN streets s ON a.street_id=s.id WHERE a.id=$1`,
+        [parsed.data.id]
+      );
+      if (row.rows.length === 0) return res.status(404).json({ error: 'not_found' });
+      res.json(row.rows[0]);
+    } catch (e) {
+      next(e);
+    }
   });
 }

@@ -7,10 +7,12 @@
     "lint": "echo 'lint:todo'"
   },
   "dependencies": {
-    "express": "^4.19.2",
+    "@nav-map/core": "*",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "zod": "^3.23.8",
-    "@nav-map/core": "*"
+    "express": "^4.19.2",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "zod": "^3.23.8"
   }
 }

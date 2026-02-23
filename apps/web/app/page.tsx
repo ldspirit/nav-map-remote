@@ -10,20 +10,20 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:4000';
 
 export default function Home() {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [address, setAddress] = useState<string>('');
-  const [userId, setUserId] = useState<string>('');
-  const [search, setSearch] = useState<string>('');
-  const [results, setResults] = useState<any[]>([]);
-  const [error, setError] = useState<string>('');
+  const [address, setAddress] = useState('');
+  const [userId, setUserId] = useState('');
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState<{ full_address: string; coordinates?: { lat: number; lng: number }; components?: Record<string, unknown> }[]>([]);
+  const [error, setError] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [toast, setToast] = useState('');
   const [currentPos, setCurrentPos] = useState<{ lat: number; lng: number } | null>(null);
-  const [route, setRoute] = useState<any | null>(null);
+  const [route, setRoute] = useState<{ type: string; geometry: unknown } | null>(null);
   const [steps, setSteps] = useState<string[]>([]);
-  const searchTimer = useRef<any>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (currentPos || !navigator.geolocation) return;
@@ -32,26 +32,30 @@ export default function Home() {
     });
   }, [currentPos]);
 
-  async function register(data: any) {
+  async function register(data: { name: string; email: string; phone: string }) {
     setError('');
-    const payload = {
-      email: data.email,
-      phone: data.phone,
-      full_name: data.name,
-      device_region: 'NG',
-      coordinates: coords || { lat: 6.5244, lng: 3.3792 }
-    };
-    const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const json = await res.json();
-    if (!res.ok) {
-      setError(json.error || 'Registration failed');
-      return;
+    try {
+      const payload = {
+        email: data.email,
+        phone: data.phone,
+        full_name: data.name,
+        device_region: 'NG',
+        coordinates: coords || { lat: 6.5244, lng: 3.3792 }
+      };
+      const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error || 'Registration failed');
+        return;
+      }
+      if (json.user_id) setUserId(json.user_id);
+    } catch {
+      setError('Network error — check your connection');
     }
-    if (json.user_id) setUserId(json.user_id);
   }
 
   async function createAddress() {
@@ -61,32 +65,41 @@ export default function Home() {
     }
     setError('');
     setLoading(true);
-    const res = await fetch(`${API_BASE}/api/v1/addresses/create`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: userId, coordinates: coords })
-    });
-    const json = await res.json();
-    setLoading(false);
-    if (!res.ok) {
-      setError(json.error || 'Address creation failed');
-      return;
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/addresses/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, coordinates: coords })
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error || 'Address creation failed');
+        return;
+      }
+      setAddress(json.full_address || '');
+      setToast('Address created');
+      setTimeout(() => setToast(''), 1500);
+      setConfirmOpen(false);
+    } catch {
+      setError('Network error — check your connection');
+    } finally {
+      setLoading(false);
     }
-    setAddress(json.full_address || '');
-    setToast('Address created');
-    setTimeout(() => setToast(''), 1500);
-    setConfirmOpen(false);
   }
 
   async function searchAddress(term?: string) {
     const q = (term ?? search).trim();
     if (!q) return;
-    const res = await fetch(`${API_BASE}/api/v1/addresses/search?q=${encodeURIComponent(q)}&country=NG`);
-    const json = await res.json();
-    setResults(json.results || []);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/addresses/search?q=${encodeURIComponent(q)}&country=NG`);
+      const json = await res.json();
+      setResults(json.results || []);
+    } catch {
+      setResults([]);
+    }
   }
 
-  async function selectResult(r: any, idx: number) {
+  async function selectResult(r: typeof results[number], idx: number) {
     if (!r?.components) return;
     setSelected(idx);
     setAddress(r.full_address);
@@ -95,13 +108,17 @@ export default function Home() {
     const start = currentPos || coords;
     if (!start) return;
 
-    const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${r.coordinates.lng},${r.coordinates.lat}?overview=full&geometries=geojson&steps=true`;
-    const res = await fetch(url);
-    const json = await res.json();
-    if (json.routes && json.routes[0]) {
-      setRoute({ type: 'Feature', geometry: json.routes[0].geometry });
-      const stepList = json.routes[0].legs[0].steps.map((s: any) => s.maneuver.instruction);
-      setSteps(stepList);
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${r.coordinates.lng},${r.coordinates.lat}?overview=full&geometries=geojson&steps=true`;
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.routes && json.routes[0]) {
+        setRoute({ type: 'Feature', geometry: json.routes[0].geometry });
+        const stepList = json.routes[0].legs[0].steps.map((s: { maneuver: { instruction: string } }) => s.maneuver.instruction);
+        setSteps(stepList);
+      }
+    } catch {
+      // Routing failed silently — map still shows the selected address
     }
   }
 
@@ -167,7 +184,7 @@ export default function Home() {
 
       <MapView
         onSelect={(c) => { setCoords(c); setConfirmOpen(true); }}
-        markers={results.map(r => r.coordinates).filter(Boolean)}
+        markers={results.map(r => r.coordinates).filter((c): c is { lat: number; lng: number } => !!c)}
         route={route}
       />
     </div>
