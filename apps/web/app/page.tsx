@@ -17,6 +17,7 @@ export default function Home() {
   const [error, setError] = useState<string>('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const searchTimer = useRef<any>(null);
 
   useEffect(() => {
     if (mapRef.current || !mapContainer.current) return;
@@ -114,7 +115,12 @@ export default function Home() {
         </div>
 
         <div className="panel">
-          <input className="input" value={search} onChange={e => { setSearch(e.target.value); searchAddress(e.target.value); }} placeholder="Search address" />
+          <input className="input" value={search} onChange={e => {
+            const val = e.target.value;
+            setSearch(val);
+            if (searchTimer.current) clearTimeout(searchTimer.current);
+            searchTimer.current = setTimeout(() => searchAddress(val), 300);
+          }} placeholder="Search address" />
           <button className="button" onClick={() => searchAddress()}>Search</button>
           <ul>
             {results.map((r, i) => <li key={i}>{r.full_address}</li>)}
