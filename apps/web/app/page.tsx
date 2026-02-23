@@ -10,6 +10,11 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:4000';
 
 export default function Home() {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  if (typeof window !== 'undefined' && !currentPos && navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      setCurrentPos({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    });
+  }
   const [address, setAddress] = useState<string>('');
   const [userId, setUserId] = useState<string>('');
   const [search, setSearch] = useState<string>('');
@@ -20,6 +25,9 @@ export default function Home() {
   const [selected, setSelected] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [toast, setToast] = useState('');
+  const [currentPos, setCurrentPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [route, setRoute] = useState<any | null>(null);
+  const [steps, setSteps] = useState<string[]>([]);
   const searchTimer = useRef<any>(null);
 
   async function register(data: any) {
@@ -76,10 +84,23 @@ export default function Home() {
     setResults(json.results || []);
   }
 
-  function selectResult(r: any, idx: number) {
+  async function selectResult(r: any, idx: number) {
     if (!r?.components) return;
     setSelected(idx);
     setAddress(r.full_address);
+    if (!r.coordinates) return;
+
+    const start = currentPos || coords;
+    if (!start) return;
+
+    const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${r.coordinates.lng},${r.coordinates.lat}?overview=full&geometries=geojson&steps=true`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if (json.routes && json.routes[0]) {
+      setRoute({ type: 'Feature', geometry: json.routes[0].geometry });
+      const stepList = json.routes[0].legs[0].steps.map((s: any) => s.maneuver.instruction);
+      setSteps(stepList);
+    }
   }
 
   return (
@@ -100,6 +121,15 @@ export default function Home() {
             setTimeout(() => { setCopied(false); setToast(''); }, 1500);
           }}
         />
+
+        {steps.length > 0 && (
+          <div className="panel">
+            <div><strong>Directions</strong></div>
+            <ol>
+              {steps.map((s, i) => <li key={i}>{s}</li>)}
+            </ol>
+          </div>
+        )}
 
         <SearchBar
           value={search}
@@ -133,7 +163,11 @@ export default function Home() {
         </div>
       )}
 
-      <MapView onSelect={(c) => { setCoords(c); setConfirmOpen(true); }} />
+      <MapView
+        onSelect={(c) => { setCoords(c); setConfirmOpen(true); }}
+        markers={results.map(r => r.coordinates).filter(Boolean)}
+        route={route}
+      />
     </div>
   );
 }
