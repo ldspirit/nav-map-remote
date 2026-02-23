@@ -15,6 +15,28 @@ cp .env.example .env
 
 # 2) Run migrations (psql)
 psql "$DATABASE_URL" -f db/migrations/0001_init.sql
+psql "$DATABASE_URL" -f db/migrations/0002_add_otp_codes.sql
+```
+
+## API (MVP)
+```bash
+# register
+curl -X POST http://localhost:4000/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"test@example.com","phone":"+234801234567","full_name":"Test User","device_region":"NG","coordinates":{"lat":6.5244,"lng":3.3792}}'
+
+# verify OTP
+curl -X POST http://localhost:4000/api/v1/auth/verify-phone \
+  -H 'Content-Type: application/json' \
+  -d '{"user_id":"<uuid>","otp_code":"123456"}'
+
+# create address
+curl -X POST http://localhost:4000/api/v1/addresses/create \
+  -H 'Content-Type: application/json' \
+  -d '{"user_id":"<uuid>","coordinates":{"lat":6.5244,"lng":3.3792}}'
+
+# search
+curl 'http://localhost:4000/api/v1/addresses/search?q=Hope'
 ```
 
 ## Notes
