@@ -17,6 +17,7 @@ export default function Home() {
   const [error, setError] = useState<string>('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<number | null>(null);
   const searchTimer = useRef<any>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
 
@@ -104,10 +105,11 @@ export default function Home() {
     setResults(json.results || []);
   }
 
-  function selectResult(r: any) {
+  function selectResult(r: any, idx: number) {
     if (!r?.components) return;
     const marker = markerRef.current;
     const map = mapRef.current;
+    setSelected(idx);
     // no coordinates in response yet; just update address display
     setAddress(r.full_address);
     if (map && marker) {
@@ -143,7 +145,11 @@ export default function Home() {
           <button className="button" onClick={() => searchAddress()}>Search</button>
           <ul>
             {results.map((r, i) => (
-              <li key={i} style={{ cursor: 'pointer' }} onClick={() => selectResult(r)}>{r.full_address}</li>
+              <li key={i}
+                  style={{ cursor: 'pointer', background: selected === i ? '#eef3ff' : 'transparent', padding: '4px', borderRadius: '4px' }}
+                  onClick={() => selectResult(r, i)}>
+                {r.full_address}
+              </li>
             ))}
           </ul>
         </div>
