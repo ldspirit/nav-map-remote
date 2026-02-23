@@ -9,8 +9,14 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'api' });
+app.get('/health', async (_req, res) => {
+  try {
+    // simple DB check
+    await (await import('./db.js')).query('SELECT 1');
+    res.json({ ok: true, service: 'api', db: 'ok' });
+  } catch (e) {
+    res.status(500).json({ ok: false, service: 'api', db: 'fail' });
+  }
 });
 
 registerRoutes(app);
