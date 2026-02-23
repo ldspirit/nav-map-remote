@@ -145,6 +145,9 @@ export default function Home() {
           <button className="button" onClick={() => searchAddress()}>Search</button>
           <button className="button" onClick={() => { setResults([]); setSearch(''); setSelected(null); }} style={{ marginLeft: 8, background: '#666' }}>Clear</button>
           <ul>
+            {results.length === 0 && search.trim() && (
+              <li style={{ color: '#666', fontStyle: 'italic' }}>No results</li>
+            )}
             {results.map((r, i) => (
               <li key={i}
                   style={{ cursor: 'pointer', background: selected === i ? '#eef3ff' : 'transparent', padding: '4px', borderRadius: '4px' }}
