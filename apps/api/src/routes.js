@@ -81,6 +81,9 @@ export function registerRoutes(app) {
     );
     if (otpRes.rows.length === 0) return res.status(401).json({ error: 'invalid_otp' });
 
+    // cleanup used OTPs for this phone
+    await query(`DELETE FROM otp_codes WHERE phone=$1`, [phone]);
+
     res.json({ ok: true });
   });
 
