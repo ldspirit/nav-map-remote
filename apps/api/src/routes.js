@@ -20,6 +20,7 @@ export function registerRoutes(app) {
     if (!parsed.success) return res.status(400).json({ error: 'invalid_input' });
 
     const { email, phone, full_name, device_region, sim_country, coordinates } = parsed.data;
+    const normalizedPhone = phone.replace(/\s+/g, '');
 
     // Simplified: billing country = device_region || sim_country || 'NG'
     const billing_country = device_region || sim_country || 'NG';
@@ -29,7 +30,7 @@ export function registerRoutes(app) {
         `INSERT INTO users (email, phone, full_name, billing_country, device_region, sim_country, signup_country)
          VALUES ($1,$2,$3,$4,$5,$6,$7)
          RETURNING id`,
-        [email, phone, full_name, billing_country, device_region || null, sim_country || null, billing_country]
+        [email, normalizedPhone, full_name, billing_country, device_region || null, sim_country || null, billing_country]
       );
     } catch (e) {
       if (String(e).includes('users_email') || String(e).includes('users_phone') || String(e).includes('duplicate')) {
@@ -43,7 +44,7 @@ export function registerRoutes(app) {
     const expires = new Date(Date.now() + 10 * 60 * 1000);
     await query(
       `INSERT INTO otp_codes (phone, code, expires_at) VALUES ($1,$2,$3)`
-      , [phone, code, expires]
+      , [normalizedPhone, code, expires]
     );
 
     res.status(201).json({
