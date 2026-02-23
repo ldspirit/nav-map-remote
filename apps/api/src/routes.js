@@ -283,13 +283,14 @@ export function registerRoutes(app) {
 
   app.get('/api/v1/addresses/search', async (req, res) => {
     const q = (req.query.q || '').toString().trim();
+    const limit = Math.min(parseInt(req.query.limit || '10', 10), 50);
     if (!q) return res.json({ results: [], count: 0, query: q });
 
     const rows = await query(
       `SELECT a.id, a.house_number, a.p_number, s.name AS street_name
        FROM addresses a JOIN streets s ON a.street_id=s.id
        WHERE s.name ILIKE $1
-       LIMIT 10`,
+       LIMIT ${limit}`,
       [`%${q}%`]
     );
 
