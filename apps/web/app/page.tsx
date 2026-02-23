@@ -18,6 +18,7 @@ export default function Home() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
   const searchTimer = useRef<any>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
 
@@ -133,6 +134,15 @@ export default function Home() {
           <div>Selected: {coords ? `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}` : 'Tap map'}</div>
           <button className="button" onClick={() => setConfirmOpen(true)} disabled={!coords || loading}>{loading ? 'Working...' : 'Create Address'}</button>
           <div>Address: {address}</div>
+          {address && (
+            <button className="button" onClick={async () => {
+              await navigator.clipboard.writeText(address);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }} style={{ background: '#2e7d32' }}>
+              {copied ? 'Copied!' : 'Copy Address'}
+            </button>
+          )}
         </div>
 
         <div className="panel">
