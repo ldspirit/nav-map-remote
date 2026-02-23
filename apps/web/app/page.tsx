@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import MapView from './components/MapView';
 import RegisterForm from './components/RegisterForm';
 import AddressPanel from './components/AddressPanel';
@@ -10,11 +10,6 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:4000';
 
 export default function Home() {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
-  if (typeof window !== 'undefined' && !currentPos && navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(pos => {
-      setCurrentPos({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-    });
-  }
   const [address, setAddress] = useState<string>('');
   const [userId, setUserId] = useState<string>('');
   const [search, setSearch] = useState<string>('');
@@ -29,6 +24,13 @@ export default function Home() {
   const [route, setRoute] = useState<any | null>(null);
   const [steps, setSteps] = useState<string[]>([]);
   const searchTimer = useRef<any>(null);
+
+  useEffect(() => {
+    if (currentPos || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(pos => {
+      setCurrentPos({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    });
+  }, [currentPos]);
 
   async function register(data: any) {
     setError('');
