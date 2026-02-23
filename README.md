@@ -16,6 +16,7 @@ cp .env.example .env
 # 2) Run migrations (psql)
 psql "$DATABASE_URL" -f db/migrations/0001_init.sql
 psql "$DATABASE_URL" -f db/migrations/0002_add_otp_codes.sql
+psql "$DATABASE_URL" -f db/migrations/0003_cleanup_otp.sql
 ```
 
 ## API (MVP)
