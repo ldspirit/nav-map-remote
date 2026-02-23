@@ -314,7 +314,17 @@ export function registerRoutes(app) {
           postal: '100001',
           city: 'Lagos',
           state: 'Lagos State'
-        })
+        }),
+        components: {
+          house_number: r.house_number,
+          street_name: r.street_name,
+          p_number: r.p_number,
+          postal_code: '100001',
+          city: 'Lagos',
+          state: 'Lagos State',
+          country: 'Nigeria',
+          country_code: 'NG'
+        }
       })),
       count: rows.rows.length,
       query: q
