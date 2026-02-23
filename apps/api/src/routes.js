@@ -298,7 +298,9 @@ export function registerRoutes(app) {
     if (!q) return res.json({ results: [], count: 0, query: q });
 
     const rows = await query(
-      `SELECT a.id, a.house_number, a.p_number, s.name AS street_name
+      `SELECT a.id, a.house_number, a.p_number, s.name AS street_name,
+              ST_Y(a.coordinates::geometry) AS lat,
+              ST_X(a.coordinates::geometry) AS lng
        FROM addresses a JOIN streets s ON a.street_id=s.id
        WHERE s.name ILIKE $1 AND s.country_id=$2
        LIMIT ${limit}`,
@@ -325,7 +327,8 @@ export function registerRoutes(app) {
           state: 'Lagos State',
           country: 'Nigeria',
           country_code: 'NG'
-        }
+        },
+        coordinates: { lat: Number(r.lat), lng: Number(r.lng) }
       })),
       count: rows.rows.length,
       query: q

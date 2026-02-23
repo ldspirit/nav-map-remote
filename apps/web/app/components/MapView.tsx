@@ -24,12 +24,17 @@ const OSM_STYLE = {
 };
 
 export default function MapView({
-  onSelect
+  onSelect,
+  markers,
+  route
 }: {
   onSelect: (coords: { lat: number; lng: number }) => void;
+  markers: { lat: number; lng: number }[];
+  route: any | null;
 }) {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
+  const markersRef = useRef<maplibregl.Marker[]>([]);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -56,6 +61,32 @@ export default function MapView({
     }
     mapRef.current = map;
   }, [onSelect]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    // clear old markers
+    markersRef.current.forEach(m => m.remove());
+    markersRef.current = markers.map(m => new maplibregl.Marker({ color: '#ff6b6b' }).setLngLat([m.lng, m.lat]).addTo(map));
+  }, [markers]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (map.getSource('route')) {
+      map.removeLayer('route-line');
+      map.removeSource('route');
+    }
+    if (route) {
+      map.addSource('route', { type: 'geojson', data: route });
+      map.addLayer({
+        id: 'route-line',
+        type: 'line',
+        source: 'route',
+        paint: { 'line-color': '#0f62fe', 'line-width': 4 }
+      });
+    }
+  }, [route]);
 
   return <div ref={containerRef} className="map" />;
 }
