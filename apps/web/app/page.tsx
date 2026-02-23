@@ -19,6 +19,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  const [toast, setToast] = useState('');
   const searchTimer = useRef<any>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
 
@@ -95,6 +96,8 @@ export default function Home() {
       return;
     }
     setAddress(json.full_address || '');
+    setToast('Address created');
+    setTimeout(() => setToast(''), 1500);
     setConfirmOpen(false);
   }
 
@@ -177,6 +180,12 @@ export default function Home() {
             <button className="button" onClick={createAddress} disabled={loading}>{loading ? 'Working...' : 'Confirm'}</button>
             <button className="button" onClick={() => setConfirmOpen(false)} style={{ marginLeft: 8, background: '#666' }}>Cancel</button>
           </div>
+        </div>
+      )}
+
+      {toast && (
+        <div style={{ position: 'absolute', bottom: 16, left: 16, background: '#2e7d32', color: 'white', padding: '8px 12px', borderRadius: 6, zIndex: 20 }}>
+          {toast}
         </div>
       )}
 
