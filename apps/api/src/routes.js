@@ -143,11 +143,19 @@ export function registerRoutes(app) {
     // 2) New street + sequential numbering
     const streetType = chooseStreetType({});
 
-    // ensure street name uniqueness (simple check)
+    // ensure street name uniqueness within 5km radius (addresses as proxy)
     let streetName = pickStreetName('NG');
     const existingNames = await query(
-      `SELECT name FROM streets WHERE country_id='NG'`,
-      []
+      `SELECT DISTINCT s.name
+       FROM streets s
+       JOIN addresses a ON a.street_id = s.id
+       WHERE s.country_id='NG'
+         AND ST_DWithin(
+           a.coordinates::geography,
+           ST_SetSRID(ST_MakePoint($1,$2),4326)::geography,
+           5000
+         )`,
+      [coordinates.lng, coordinates.lat]
     );
     const used = new Set(existingNames.rows.map(r => r.name));
     let attempts = 0;
