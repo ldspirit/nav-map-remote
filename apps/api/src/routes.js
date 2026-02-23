@@ -295,7 +295,14 @@ export function registerRoutes(app) {
     res.json({
       results: rows.rows.map(r => ({
         address_id: r.id,
-        full_address: `${r.house_number} ${r.street_name} P${r.p_number}`
+        full_address: formatByCountry({
+          countryCode: 'NG',
+          number: r.house_number,
+          street: `${r.street_name} P${r.p_number}`,
+          postal: '100001',
+          city: 'Lagos',
+          state: 'Lagos State'
+        })
       })),
       count: rows.rows.length,
       query: q
