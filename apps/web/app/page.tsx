@@ -14,6 +14,8 @@ export default function Home() {
   const [userId, setUserId] = useState<string>('');
   const [search, setSearch] = useState<string>('');
   const [results, setResults] = useState<any[]>([]);
+  const [error, setError] = useState<string>('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (mapRef.current || !mapContainer.current) return;
@@ -26,6 +28,7 @@ export default function Home() {
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
     map.on('click', e => {
       setCoords({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+      setConfirmOpen(true);
     });
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(pos => {
@@ -37,6 +40,7 @@ export default function Home() {
 
   async function register(e: any) {
     e.preventDefault();
+    setError('');
     const form = new FormData(e.target);
     const payload = {
       email: form.get('email'),
@@ -51,21 +55,35 @@ export default function Home() {
       body: JSON.stringify(payload)
     });
     const json = await res.json();
+    if (!res.ok) {
+      setError(json.error || 'Registration failed');
+      return;
+    }
     if (json.user_id) setUserId(json.user_id);
   }
 
   async function createAddress() {
-    if (!coords || !userId) return;
+    if (!coords || !userId) {
+      setError('Register first and select a location');
+      return;
+    }
+    setError('');
     const res = await fetch(`${API_BASE}/api/v1/addresses/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id: userId, coordinates: coords })
     });
     const json = await res.json();
+    if (!res.ok) {
+      setError(json.error || 'Address creation failed');
+      return;
+    }
     setAddress(json.full_address || '');
+    setConfirmOpen(false);
   }
 
   async function searchAddress() {
+    if (!search.trim()) return;
     const res = await fetch(`${API_BASE}/api/v1/addresses/search?q=${encodeURIComponent(search)}&country=NG`);
     const json = await res.json();
     setResults(json.results || []);
@@ -81,9 +99,11 @@ export default function Home() {
           <button className="button" type="submit">Register</button>
         </form>
 
+        {error && <div className="error">{error}</div>}
+
         <div className="panel">
           <div>Selected: {coords ? `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}` : 'Tap map'}</div>
-          <button className="button" onClick={createAddress}>Create Address</button>
+          <button className="button" onClick={() => setConfirmOpen(true)} disabled={!coords}>Create Address</button>
           <div>Address: {address}</div>
         </div>
 
@@ -95,6 +115,17 @@ export default function Home() {
           </ul>
         </div>
       </div>
+
+      {confirmOpen && coords && (
+        <div className="modal">
+          <div className="modal-card">
+            <div>Confirm location?</div>
+            <div className="panel">{coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}</div>
+            <button className="button" onClick={createAddress}>Confirm</button>
+            <button className="button" onClick={() => setConfirmOpen(false)} style={{ marginLeft: 8, background: '#666' }}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       <div ref={mapContainer} className="map" />
     </div>
