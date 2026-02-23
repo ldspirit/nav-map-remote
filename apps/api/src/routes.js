@@ -136,7 +136,16 @@ export function registerRoutes(app) {
           postal: '100001',
           city: 'Lagos',
           state: 'Lagos State'
-        })
+        }),
+        components: {
+          house_number: existing.house_number,
+          street_name: 'Hope Street',
+          p_number: pNumber,
+          postal_code: '100001',
+          city: 'Lagos',
+          state: 'Lagos State',
+          country: 'Nigeria'
+        }
       });
     }
 
@@ -181,7 +190,16 @@ export function registerRoutes(app) {
           postal: '100001',
           city: 'Lagos',
           state: 'Lagos State'
-        })
+        }),
+        components: {
+          house_number: houseNumber,
+          street_name: 'Hope Street',
+          p_number: 1,
+          postal_code: '100001',
+          city: 'Lagos',
+          state: 'Lagos State',
+          country: 'Nigeria'
+        }
       });
     }
 
@@ -238,7 +256,16 @@ export function registerRoutes(app) {
         postal: '100001',
         city: 'Lagos',
         state: 'Lagos State'
-      })
+      }),
+      components: {
+        house_number: houseNumber,
+        street_name: `${streetName} ${streetType}`,
+        p_number: 1,
+        postal_code: '100001',
+        city: 'Lagos',
+        state: 'Lagos State',
+        country: 'Nigeria'
+      }
     });
   });
 
