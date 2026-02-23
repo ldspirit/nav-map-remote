@@ -143,6 +143,7 @@ export default function Home() {
             searchTimer.current = setTimeout(() => searchAddress(val), 300);
           }} placeholder="Search address" />
           <button className="button" onClick={() => searchAddress()}>Search</button>
+          <button className="button" onClick={() => { setResults([]); setSearch(''); setSelected(null); }} style={{ marginLeft: 8, background: '#666' }}>Clear</button>
           <ul>
             {results.map((r, i) => (
               <li key={i}
