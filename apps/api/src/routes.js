@@ -105,12 +105,13 @@ export function registerRoutes(app) {
     if (!parsed.success) return res.status(400).json({ error: 'invalid_input' });
 
     const { user_id, coordinates, unit_designation } = parsed.data;
+    const countryCode = 'NG';
 
     // 1) GPS match to existing address (P-system)
     const nearby = await query(
       `SELECT id, street_id, house_number, p_number
        FROM addresses
-       WHERE country_id = 'NG'
+       WHERE country_id = $3
          AND ST_DWithin(
            coordinates::geography,
            ST_SetSRID(ST_MakePoint($1,$2),4326)::geography,
@@ -118,7 +119,7 @@ export function registerRoutes(app) {
          )
        ORDER BY created_at ASC
        LIMIT 1`,
-      [coordinates.lng, coordinates.lat]
+      [coordinates.lng, coordinates.lat, countryCode]
     );
 
     if (nearby.rows.length > 0) {
@@ -165,7 +166,7 @@ export function registerRoutes(app) {
     const nearbyStreet = await query(
       `SELECT a.street_id
        FROM addresses a
-       WHERE a.country_id='NG'
+       WHERE a.country_id=$3
          AND ST_DWithin(
            a.coordinates::geography,
            ST_SetSRID(ST_MakePoint($1,$2),4326)::geography,
@@ -173,7 +174,7 @@ export function registerRoutes(app) {
          )
        ORDER BY ST_Distance(a.coordinates::geography, ST_SetSRID(ST_MakePoint($1,$2),4326)::geography)
        LIMIT 1`,
-      [coordinates.lng, coordinates.lat]
+      [coordinates.lng, coordinates.lat, countryCode]
     );
 
     if (nearbyStreet.rows.length > 0) {
@@ -225,13 +226,13 @@ export function registerRoutes(app) {
       `SELECT DISTINCT s.name
        FROM streets s
        JOIN addresses a ON a.street_id = s.id
-       WHERE s.country_id='NG'
+       WHERE s.country_id=$3
          AND ST_DWithin(
            a.coordinates::geography,
            ST_SetSRID(ST_MakePoint($1,$2),4326)::geography,
            5000
          )`,
-      [coordinates.lng, coordinates.lat]
+      [coordinates.lng, coordinates.lat, countryCode]
     );
     const used = new Set(existingNames.rows.map(r => r.name));
     let attempts = 0;
