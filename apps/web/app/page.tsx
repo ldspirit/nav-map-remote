@@ -62,22 +62,24 @@ export default function Home() {
     }
     setError('');
     setLoading(true);
-    const res = await fetch(`${API_BASE}/api/v1/addresses/create`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: userId, coordinates: coords })
-    });
-    const json = await res.json();
-    setLoading(false);
-    if (!res.ok) {
-      setError(json.error || 'Address creation failed');
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/addresses/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, coordinates: coords })
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error || 'Address creation failed');
+        return;
+      }
+      setAddress(json.full_address || '');
+      setToast('Address created');
+      setTimeout(() => setToast(''), 1500);
+    } finally {
+      setLoading(false);
       setConfirmOpen(false);
-      return;
     }
-    setAddress(json.full_address || '');
-    setToast('Address created');
-    setTimeout(() => setToast(''), 1500);
-    setConfirmOpen(false);
   }
 
   async function searchAddress(term?: string) {
