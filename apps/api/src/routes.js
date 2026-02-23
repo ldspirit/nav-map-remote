@@ -142,7 +142,19 @@ export function registerRoutes(app) {
 
     // 2) New street + sequential numbering
     const streetType = chooseStreetType({});
-    const streetName = pickStreetName('NG');
+
+    // ensure street name uniqueness (simple check)
+    let streetName = pickStreetName('NG');
+    const existingNames = await query(
+      `SELECT name FROM streets WHERE country_id='NG'`,
+      []
+    );
+    const used = new Set(existingNames.rows.map(r => r.name));
+    let attempts = 0;
+    while (used.has(streetName) && attempts < 10) {
+      streetName = pickStreetName('NG');
+      attempts++;
+    }
 
     const street = await query(
       `INSERT INTO streets (name, street_type, country_id) VALUES ($1,$2,'NG') RETURNING id`,
