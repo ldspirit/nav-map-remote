@@ -57,6 +57,7 @@ export default function Home() {
   async function createAddress() {
     if (!coords || !userId) {
       setError('Register first and select a location');
+      setConfirmOpen(false);
       return;
     }
     setError('');
@@ -70,6 +71,7 @@ export default function Home() {
     setLoading(false);
     if (!res.ok) {
       setError(json.error || 'Address creation failed');
+      setConfirmOpen(false);
       return;
     }
     setAddress(json.full_address || '');
