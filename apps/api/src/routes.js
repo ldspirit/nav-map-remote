@@ -51,7 +51,7 @@ export function registerRoutes(app) {
       , [normalizedPhone, code, expires]
     );
 
-    res.status(201).json({
+    const response = {
       user_id: user.rows[0].id,
       phone_verification_required: true,
       otp_sent_to: phone.replace(/.(?=.{3})/g, '*'),
@@ -63,7 +63,13 @@ export function registerRoutes(app) {
         ip_country: billing_country,
         conflict_detected: false
       }
-    });
+    };
+
+    if (process.env.MOCK_DB === '1') {
+      response.debug_otp = code;
+    }
+
+    res.status(201).json(response);
   });
 
   app.post('/api/v1/auth/verify-phone', async (req, res) => {
@@ -285,17 +291,6 @@ export function registerRoutes(app) {
     });
   });
 
-  app.get('/api/v1/addresses/:id', async (req, res) => {
-    const { id } = req.params;
-    const row = await query(
-      `SELECT a.id, a.house_number, a.p_number, s.name AS street_name
-       FROM addresses a JOIN streets s ON a.street_id=s.id WHERE a.id=$1`,
-      [id]
-    );
-    if (row.rows.length === 0) return res.status(404).json({ error: 'not_found' });
-    res.json(row.rows[0]);
-  });
-
   app.get('/api/v1/addresses/search', async (req, res) => {
     const q = (req.query.q || '').toString().trim();
     const limit = Math.min(parseInt(req.query.limit || '10', 10), 50);
@@ -335,5 +330,16 @@ export function registerRoutes(app) {
       count: rows.rows.length,
       query: q
     });
+  });
+
+  app.get('/api/v1/addresses/:id', async (req, res) => {
+    const { id } = req.params;
+    const row = await query(
+      `SELECT a.id, a.house_number, a.p_number, s.name AS street_name
+       FROM addresses a JOIN streets s ON a.street_id=s.id WHERE a.id=$1`,
+      [id]
+    );
+    if (row.rows.length === 0) return res.status(404).json({ error: 'not_found' });
+    res.json(row.rows[0]);
   });
 }
