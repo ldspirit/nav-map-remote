@@ -44,3 +44,4 @@ curl 'http://localhost:4000/api/v1/addresses/search?q=Hope'
 - Database uses PostgreSQL + PostGIS
 - Migrations are plain SQL for portability
 - OTP cleanup: schedule `DELETE FROM otp_codes WHERE expires_at < NOW();` (cron)
+# test
